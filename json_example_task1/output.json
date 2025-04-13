@@ -1,6 +1,6 @@
 [
     {
-        "image": "images/G000_IMG062.jpg",
+        "image": "G000_IMG062.jpg",
         "num_pieces": 15,
         "board": [
             [1, 0, 0, 0, 0, 0, 0, 0],
@@ -106,7 +106,7 @@
         ]
     },
     {
-        "image": "images/G000_IMG087.jpg",
+        "image": "G000_IMG087.jpg",
         "num_pieces": 10,
         "board": [
             [0, 0, 0, 1, 0, 0, 1, 0],
