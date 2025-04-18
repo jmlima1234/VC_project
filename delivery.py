@@ -641,24 +641,21 @@ def process_image(key, v, real_matrices, show_plots=False):
 output_dir = './chessboard_outputs/'
 os.makedirs(output_dir, exist_ok=True)
 
-# Process all images in the images folder
-# Get all image files in the folder
-all_image_files = [os.path.join(BASE_IMG_FOLDER, f) for f in os.listdir(BASE_IMG_FOLDER) 
-                  if f.endswith(('.jpg', '.png', '.jpeg'))]
+# Read the input.json file to get the list of image files
+input_file_path = './json_example_task1/input.json'
+try:
+    with open(input_file_path, 'r') as input_file:
+        input_data = json.load(input_file)
+        image_files = input_data.get("image_files", [])
+        image_files = [os.path.join(BASE_IMG_FOLDER, os.path.basename(f)) for f in image_files]
+        print(f"Found {len(image_files)} image files in input.json")
+except FileNotFoundError:
+    print(f"Error: {input_file_path} not found!")
+    image_files = []
 
-MAX_IMAGES = 150  # Set to None to process all images
-image_files = all_image_files[:MAX_IMAGES] if MAX_IMAGES is not None else all_image_files
-
-print(f"Processing {len(image_files)} out of {len(all_image_files)} available images")
-
-# # Define specific image files to process
-# image_filenames_failed = [
-# "G000_IMG030.jpg",
-# "G000_IMG087.jpg",
-# ]
-
-# Create full paths for each image file
-# image_files = [os.path.join(BASE_IMG_FOLDER, filename) for filename in image_filenames_failed]
+# Ensure only existing files are processed
+image_files = [f for f in image_files if os.path.exists(f)]
+print(f"Processing {len(image_files)} valid image files from input.json")
 
 # Process each image
 failed_images = []
@@ -839,3 +836,6 @@ with open(output_file_path, 'w') as json_file:
     json.dump(output_data, json_file, indent=4)
 
 print(f"Output written to {output_file_path}")
+
+for image in failed_images:
+    print(f"Failed to process image: {image}")
