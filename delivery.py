@@ -1,39 +1,26 @@
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
 import os
 import xgboost as xgb
-import pickle
 import json
+import re
 
-# Parameters for tunning
-
-BASE_IMG_FOLDER = './VC_2425_Project_public/images/'
-# BASE_IMG_FOLDER = './all_images/'
-
-# Parameters for the image processing
-SHOW_DEBUG_IMGS = "NONE" # ["LINES", "WARP", "ALL", "NONE"]
+# Path to the input JSON file containing image filenames to process
+INPUT_FILE_PATH = './input.json'
+# Path to the output JSON file where results will be saved
+OUTPUT_FILE_PATH = './output.json'
+# Path to the directory containing corner horse templates
 CORNER_HORSE_TEMPLATE_PATH = "./cornerHorse_templates/"
-SAVE_DEBUG_IMGS = False
 
 # Load the images for the corner horses and store them in a list
 CORNER_HORSES_TEMPLATES = []
+
 for filename in os.listdir(CORNER_HORSE_TEMPLATE_PATH):
     if filename.endswith(".png") or filename.endswith(".jpg"):
         img = cv2.imread(os.path.join(CORNER_HORSE_TEMPLATE_PATH, filename))
         CORNER_HORSES_TEMPLATES.append(img)
     else:
         continue
-
-REAL_MATRICES = {}
-# Load the real matrix from pickle file
-try:
-    with open('real_matrices.pkl', 'rb') as f:
-        REAL_MATRICES = pickle.load(f)
-    print(f"Loaded real matrices for {len(REAL_MATRICES)} images")
-except FileNotFoundError:
-    print("Real matrices file not found!")
-    REAL_MATRICES = {}
 
 def show_original_and_gray(image_path):
     original_img = cv2.imread(image_path)
@@ -59,26 +46,6 @@ def show_original_and_gray(image_path):
     # Convert to grayscale
     gray_img = cv2.cvtColor(no_wood_img, cv2.COLOR_BGR2GRAY)
     
-
-    # Display images to show the process
-    if SHOW_DEBUG_IMGS == "ALL":
-        plt.figure(figsize=(10, 5))
-
-        # Original image - left
-        plt.subplot(1, 2, 1)
-        plt.imshow(rgb_img)
-        plt.axis('off')
-        plt.title('Original RGB Image')
-
-        # Final grayscale image - right
-        plt.subplot(1, 2, 2)
-        plt.imshow(gray_img, cmap='gray')
-        plt.axis('off')
-        plt.title('Without Wood Grayscale Image')
-
-        plt.tight_layout()
-        plt.show()
-
     return original_img, gray_img
 
 def preprocess_image(gray_img, blur_kernel_size=17, intensity_factor=1.3, laplacian_kernel_size=3):
@@ -126,7 +93,7 @@ def remove_noise_components(line_img, min_area=1000, keep_largest=True):
     final_image = np.zeros_like(line_img)
     
     if keep_largest:
-        # Get the areas of all components (ignoring the background)
+        # Get the areas of all components
         areas = stats[1:, cv2.CC_STAT_AREA]
         
         # Find the label of the largest component
@@ -135,17 +102,10 @@ def remove_noise_components(line_img, min_area=1000, keep_largest=True):
         # Keep only the largest component
         final_image[labels == max_label] = 255
     else:
-        # If not keeping only the largest component, keep components above the min_area threshold
         for label in range(1, num_labels):
             area = stats[label, cv2.CC_STAT_AREA]
             if area >= min_area:
                 final_image[labels == label] = 255
-
-    if (SHOW_DEBUG_IMGS == "ALL" or SHOW_DEBUG_IMGS == "LINES"):
-        plt.subplot(1, 3, 1)
-        plt.title("Only Board Lines (Filtered)", fontsize=12)
-        plt.imshow(final_image, cmap="gray")
-        plt.axis('off')
 
     return final_image
 
@@ -180,17 +140,6 @@ def warp_chessboard(gray_img, original_img, contour, board_size=800):
         warped_original = cv2.warpPerspective(original_img, matrix, (board_size, board_size))
         warped_original_rgb = cv2.cvtColor(warped_original, cv2.COLOR_BGR2RGB)
         
-        if (SHOW_DEBUG_IMGS == "ALL" or SHOW_DEBUG_IMGS == "LINES" or SHOW_DEBUG_IMGS == "WARP"):
-            plt.subplot(1, 3, 2)
-            plt.title("Warped Chessboard (Grayscale)", fontsize=12)
-            plt.imshow(warped_board, cmap="gray")
-            plt.axis('off')
-            
-            plt.subplot(1, 3, 3)
-            plt.title("Warped Chessboard (Original)", fontsize=12)
-            plt.imshow(warped_original_rgb)
-            plt.axis('off')
-            
         # Return the warp matrix as well to allow for reverting the transform
         return warped_board, warped_original_rgb, matrix, ordered_corners, dst_corners
     else:
@@ -209,7 +158,7 @@ def process_chessboard_image(image_path):
         print("Chessboard contour not found!")
         return None
     
-def detect_grid_lines(image_rgb, show_lines=True, edge_threshold=20):
+def detect_grid_lines(image_rgb, show_lines=False, edge_threshold=20):
     height, width = image_rgb.shape[:2]
 
     gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
@@ -292,24 +241,7 @@ def detect_grid_lines(image_rgb, show_lines=True, edge_threshold=20):
         filled_horizontal = merged_horizontal.copy()
         filled_vertical = merged_vertical.copy()
 
-    if show_lines:
-        merged_image = image_rgb.copy()
-        for y in merged_horizontal:
-            color = (255, 0, 255) if y in filled_horizontal else (0, 0, 255)  # Magenta or Blue
-            cv2.line(merged_image, (0, y), (merged_image.shape[1], y), color, 3)
-
-        for x in merged_vertical:
-            color = (0, 255, 255) if x in filled_vertical else (0, 255, 0)  # Cyan or Green
-            cv2.line(merged_image, (x, 0), (x, merged_image.shape[0]), color, 3)
-
-        plt.figure(figsize=(8, 8))
-        plt.imshow(merged_image)
-        plt.title("Filtered + Filled Grid Lines (Distinct Colors)")
-        plt.axis("off")
-        plt.show()
-
     return merged_horizontal, merged_vertical
-
 
 def find_horse_template_matching(image_rgb, image_name=None):
     img_rgb = image_rgb.copy()
@@ -375,7 +307,6 @@ def find_horse_template_matching(image_rgb, image_name=None):
             print("No good match found.")
         return None
     
-
 def detect_circles(grey_board, min_radius=20, max_radius=32):
     grey_board = cv2.GaussianBlur(grey_board, (5, 5), 0)
     circles = cv2.HoughCircles(grey_board, cv2.HOUGH_GRADIENT, dp=1.2, minDist=30,
@@ -383,10 +314,6 @@ def detect_circles(grey_board, min_radius=20, max_radius=32):
     if circles is not None:
         return np.round(circles[0, :]).astype("int")
     return []
-
-def euclidean_distance(p1, p2):
-    return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
-
 
 def extract_features(image):
     h, w, _ = image.shape
@@ -429,37 +356,11 @@ def validate_with_model(image):
     # Extract features from the image
     features = np.array(extract_features(image), dtype=np.float32).reshape(1, -1)  # Ensure it's a 2D array (1, num_features)
     
-    # Predict using the model directly on the feature array (no need to create DMatrix manually)
+    # Predict using the model
     prediction_prob = xgb_model.predict(features)[0]
     
     # 1 = piece, 0 = empty
     return prediction_prob
-
-
-def calculate_metrics(detected_matrix, ground_truth_matrix):
-    detected_flat = detected_matrix.flatten()
-    ground_truth_flat = ground_truth_matrix.flatten()
-
-    tp = np.sum(np.logical_and(detected_flat == 1, ground_truth_flat == 1))
-    fp = np.sum(np.logical_and(detected_flat == 1, ground_truth_flat == 0))
-    fn = np.sum(np.logical_and(detected_flat == 0, ground_truth_flat == 1))
-    tn = np.sum(np.logical_and(detected_flat == 0, ground_truth_flat == 0))
-
-    accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-
-    return {
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1_score': f1,
-        'true_positives': tp,
-        'false_positives': fp,
-        'false_negatives': fn,
-        'true_negatives': tn
-    }
 
 def map_points_back_to_original(points, full_transform_matrix):
     # Compute the inverse of the full transformation matrix
@@ -474,7 +375,7 @@ def map_points_back_to_original(points, full_transform_matrix):
     # Reshape the result to (N, 2)
     return mapped.reshape(-1, 2).astype(int)
 
-def process_image(key, v, real_matrices, show_plots=False):
+def process_image(key, v):
     board_size = v['warped_original_rgb'].shape[0]
     crop_margin = int(board_size * 0.07)
 
@@ -540,18 +441,6 @@ def process_image(key, v, real_matrices, show_plots=False):
     board_matrix_2d = np.array(board_matrix).reshape(8, 8)
     v['presence_matrix'] = board_matrix_2d
 
-    if key in real_matrices:
-        ground_truth_matrix = np.array(real_matrices[key])
-        metrics = calculate_metrics(np.flipud(board_matrix_2d), ground_truth_matrix)
-        v['detection_metrics'] = metrics
-
-        print(f"Detection metrics for {key}:")
-        print(f"  Accuracy: {metrics['accuracy']:.4f}")
-        print(f"  Precision: {metrics['precision']:.4f}")
-        print(f"  Recall: {metrics['recall']:.4f}")
-        print(f"  F1 Score: {metrics['f1_score']:.4f}")
-        print(f"  TP: {metrics['true_positives']}, FP: {metrics['false_positives']}, FN: {metrics['false_negatives']}, TN: {metrics['true_negatives']}")
-
     print(f"Presence Matrix for {key}:")
     print("Number of pieces detected:", np.sum(board_matrix_2d))
     print(np.flipud(board_matrix_2d).tolist())
@@ -569,88 +458,24 @@ def process_image(key, v, real_matrices, show_plots=False):
         [[x, y]] for (x, y, r) in adjusted_circles
     ])  # shape: (N, 1, 2)
     
-    print(centers)
     circle_centers_original  = map_points_back_to_original(centers, v['matrix_full'])
-    print(circle_centers_original)
     v['detected_pieces'] = circle_centers_original 
 
-    # save the coordinates of the boxes
+    # Save the coordinates of the boxes
     for (x, y) in circle_centers_original:
         detected_boxes.append((x - 100, y - 160, x + 90, y + 110))
     v['bounding_boxes'] = detected_boxes
-
-    # Optional visualization
-    if show_plots:
-        num_subplots = 4 if key in real_matrices else 3
-        plt.figure(figsize=(18, 6))
-
-        plt.subplot(1, num_subplots, 1)
-        plt.imshow(gray, cmap='gray')
-        plt.title("Grayscale")
-        plt.axis('off')
-
-        all_circles_image = np.copy(cropped_board)
-
-        # Draw validated circles in GREEN
-        # Draw validated circles in GREEN with bounding boxes
-        for (x, y, r) in validated_circles:
-            cv2.circle(all_circles_image, (x, y), r, (0, 255, 0), 2)  # Circle
-            cv2.rectangle(all_circles_image, (x - 3, y - 3), (x + 3, y + 3), (0, 255, 255), -1)  # Yellow center
-
-            # Draw bounding box (square)
-            diameter = 2 * r
-            top_left = (int(x - r), int(y - r))
-            bottom_right = (int(x + r), int(y + r))
-            cv2.rectangle(all_circles_image, top_left, bottom_right, (255, 255, 0), 2)  # Cyan box
-
-
-        # Draw rejected circles in RED
-        for (x, y, r) in rejected_circles:
-            cv2.circle(all_circles_image, (x, y), r, (255, 0, 0), 2)  # Red
-
-        # Make a copy of the original image for drawing
-        original_img = v['original image']  # Load original image again
-        img_with_boxes = original_img.copy()
-        
-        for (x, y) in circle_centers_original:
-            cv2.rectangle(img_with_boxes, (x - 100, y - 160), (x + 90, y + 110), (0, 255, 0), 3)  # Green box adjusted upward
-
-
-        plt.figure(figsize=(10, 10))
-        plt.imshow(cv2.cvtColor(img_with_boxes, cv2.COLOR_BGR2RGB))
-        plt.title("Boxes in Original Image")
-        plt.axis('off')
-        plt.show()
-
-        plt.subplot(1, num_subplots, 2)
-        plt.imshow(all_circles_image)
-        plt.title("Board with Circles (Green = Valid, Red = Rejected)")
-        plt.axis('off')
-
-        plt.subplot(1, num_subplots, 3)
-        plt.imshow(board_matrix_2d, cmap='hot', interpolation='nearest')
-        plt.title("Detected Presence Matrix")
-        plt.axis('off')
-
-        plt.tight_layout()
-        plt.show()
-
+    
     return v
 
-# Create output directory if it doesn't exist
-output_dir = './chessboard_outputs/'
-os.makedirs(output_dir, exist_ok=True)
-
 # Read the input.json file to get the list of image files
-input_file_path = './json_example_task1/input.json'
 try:
-    with open(input_file_path, 'r') as input_file:
+    with open(INPUT_FILE_PATH, 'r') as input_file:
         input_data = json.load(input_file)
         image_files = input_data.get("image_files", [])
-        image_files = [os.path.join(BASE_IMG_FOLDER, os.path.basename(f)) for f in image_files]
         print(f"Found {len(image_files)} image files in input.json")
 except FileNotFoundError:
-    print(f"Error: {input_file_path} not found!")
+    print(f"Error: {INPUT_FILE_PATH} not found!")
     image_files = []
 
 # Ensure only existing files are processed
@@ -671,9 +496,6 @@ successful_images = {}
 for image_path in image_files:
     filename = os.path.basename(image_path)
     print(f"Processing {filename}")
-
-    if (SHOW_DEBUG_IMGS != "NONE"):
-        plt.figure(figsize=(16, 8))
 
     original_img, _ = show_original_and_gray(image_path)
     warped, warped_original_rgb, matrix, ordered_corners, dst_corners = process_chessboard_image(image_path)
@@ -714,22 +536,12 @@ for image_path in image_files:
     else:
         failed_images.append(filename)
 
-    if (SHOW_DEBUG_IMGS != "NONE"):
-        plt.tight_layout(pad=3.0)
-        subplot_path = os.path.join(output_dir, f"subplots_{filename.split('.')[0]}.png")
-        if SAVE_DEBUG_IMGS:
-            plt.savefig(subplot_path, dpi=300, bbox_inches='tight')
-        print(f"Saved subplots to {subplot_path}")
-        plt.show()
-
 # Summary
 print("\nImages where chessboard detection failed:")
 for failed_image in failed_images:
     print(failed_image)
 
 print(f"\nSuccessfully processed {len(image_files) - len(failed_images)}/{len(image_files)} images")
-print(f"Subplot images saved to: {os.path.abspath(output_dir)}")
-
 
 files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 
@@ -768,7 +580,6 @@ for k, v in successful_images.items():
 
     v['squares'] = squares
 
-files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 DISTANCE_THRESHOLD = 25
 BORDER_TOLERANCE = 5
 
@@ -779,31 +590,9 @@ xgb_model.load_model("xgb_piece_detector.json")
 presence_matrix = []
 
 for k, v in successful_images.items():
-    result = process_image(k, v, REAL_MATRICES,show_plots=False)
+    result = process_image(k, v)
     if result:
         presence_matrix.append(result['presence_matrix'])
-
-# Aggregate metrics
-all_metrics = [v['detection_metrics'] for v in successful_images.values() if 'detection_metrics' in v]
-if all_metrics:
-    def average(key): return np.mean([m[key] for m in all_metrics])
-    aggregate_metrics = {
-        "mean_accuracy": average("accuracy"),
-        "mean_precision": average("precision"),
-        "mean_recall": average("recall"),
-        "mean_f1_score": average("f1_score"),
-        "total_true_positives": sum(m["true_positives"] for m in all_metrics),
-        "total_false_positives": sum(m["false_positives"] for m in all_metrics),
-        "total_false_negatives": sum(m["false_negatives"] for m in all_metrics),
-        "total_true_negatives": sum(m["true_negatives"] for m in all_metrics),
-    }
-
-    print("\n📊 Aggregate Metrics:")
-    for k, v in aggregate_metrics.items():
-        print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
-else:
-    print("No detection metrics were found.")
-
 
 # Prepare the data for the JSON file
 output_data = []
@@ -811,7 +600,7 @@ output_data = []
 for k, v in successful_images.items():
     presence_matrix = v.get('presence_matrix', [])
     detected_pieces = v.get('bounding_boxes', [])
-    
+
     # Convert bounding boxes to the required format
     detected_pieces_formatted = [
         {
@@ -822,7 +611,7 @@ for k, v in successful_images.items():
         }
         for box in detected_pieces
     ]
-    
+
     output_data.append({
         "image": k,
         "num_pieces": int(np.sum(presence_matrix)),  # Convert to native Python int
@@ -830,12 +619,30 @@ for k, v in successful_images.items():
         "detected_pieces": detected_pieces_formatted
     })
 
-# Write the data to a JSON file
-output_file_path = './output.json'
-with open(output_file_path, 'w') as json_file:
-    json.dump(output_data, json_file, indent=4)
+# Dump the JSON string with indentation
+json_string = json.dumps(output_data, indent=4)
 
-print(f"Output written to {output_file_path}")
+# Post-process to compact "board" values only (pretty formatting)
+def compact_board_arrays(match):
+    board_content = match.group(1)
+    # Find all rows and join them properly
+    rows = re.findall(r'\[\s*([0-1,\s]+?)\s*\]', board_content)
+    # Remove unnecessary spaces and join rows inline, ensuring proper format
+    compact_rows = [f"    [{' '.join(row.strip().split())}]" for row in rows]
+    return f'"board": [\n        ' + ',\n        '.join(compact_rows) + '\n\t    ]'
+
+# Apply only to "board": [...]
+json_string = re.sub(
+    r'"board": \[\s*((?:\s*\[\s*[0-1,\s]+\s*\],?\s*)+)\s*\]',
+    compact_board_arrays,
+    json_string
+)
+
+# Write the final formatted string to file
+with open(OUTPUT_FILE_PATH, 'w') as f:
+    f.write(json_string)
+
+print(f"Output written to {OUTPUT_FILE_PATH}")
 
 for image in failed_images:
     print(f"Failed to process image: {image}")
