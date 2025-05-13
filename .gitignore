@@ -3,4 +3,8 @@ chessboard_outputs
 labeled_squares
 misclassified_images
 all_images
+all_labels
+training_inputs
+public_images
+output_images
 *.pt
