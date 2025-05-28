@@ -1,6 +1,6 @@
-train: ./complete_YOLO/train/images
-val: ./complete_YOLO/valid/images
-test: ./complete_YOLO/test/images
+train: ./chessred2k_YOLO/train/images
+val: ./chessred2k_YOLO/valid/images
+test: ./chessred2k_YOLO/test/images
 
 nc: 13
 names: ["white-pawn", "white-rook", "white-knight", "white-bishop", "white-queen", "white-king", "black-pawn", "black-rook", "black-knight", "black-bishop", "black-queen", "black-king", "empty"]

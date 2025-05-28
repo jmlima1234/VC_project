@@ -7,4 +7,6 @@ all_labels
 training_inputs
 public_images
 output_images
+yolo-v12-chessred
+*.pth
 *.pt
