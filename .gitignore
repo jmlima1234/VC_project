@@ -8,5 +8,8 @@ training_inputs
 public_images
 output_images
 yolo-v12-chessred
+split_by_presence
+split_count
+checkpoints*
 *.pth
 *.pt
