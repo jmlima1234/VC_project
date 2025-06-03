@@ -9,6 +9,7 @@ public_images
 output_images
 yolo-v12-chessred
 split_by_presence
+split_count_presence
 split_count
 checkpoints*
 *.pth
