@@ -10,6 +10,8 @@ output_images
 yolo-v12-chessred
 split_by_presence
 split_count_presence
+rtdetr-chessred
+yolo-v11-chessred
 split_count
 checkpoints*
 *.pth
